@@ -74,7 +74,7 @@ None blocking. Defaults applied: tunnel tool Cloudflare Quick Tunnel (D10, rever
 - Real internet tunnel acceptance (including the 2-second tolerance over the internet) needs a human host on a real network plus a guest outside it. Factory tests cover the helper logic and a local loopback path with simulated delay only.
 - The tunnel is a third-party service chosen and run by the host; its availability and terms are outside test-01's control.
 - The factory's managed infrastructure supports MySQL 8.4 only. M1 needs no database (in-memory rooms).
-- GitHub: the API reports push/admin permission; an actual test push to a seed branch (not `main`) is still pending.
+- GitHub: write access confirmed by the first push to `main` (commit f6b078b5f727fa806d22d30afa0de59bd124bb66: README.md and this plan), authorized by the human (D14).
 - Linear write access is not yet proven by a confirmed write; the v1 living-plan save is in an unknown state.
 
 ## 8. Checkpoints (D13, supersedes D11)
@@ -88,9 +88,13 @@ CP1 v1 (M1 only, older wording) and CP1 v2 (M1 + M2) are withdrawn. CP1 v3 is th
 
 M2 bullet-screen defaults for CP2 (D12, reversible): one chat input feeds both the sidebar and the scrolling overlay; per-viewer on/off toggle; works in fullscreen; lanes avoid overlap; player controls stay clickable; 100-character limit; text-only rendering.
 
-## 9. Open conflict: factory dispatch and Linear
+## 9. Factory dispatch and Linear (D15, resolved: option b)
 
-The factory's task dispatch tool creates one Linear issue per worker task; it currently has no no-Linear mode. D14 says no Linear tasks. Until this is resolved, approved M1 tasks cannot be dispatched to workers. Options: (a) allow dispatch to auto-create `[test-pd-01]` Linear issues only as a factory side effect; (b) keep Linear at zero and wait for a factory operator to enable a no-Linear dispatch mode (owner unassigned, no date).
+The factory's task dispatch tool creates one Linear issue per worker task and currently has no no-Linear mode. Jackie Wong chose (b): keep Linear at zero. Captain will not dispatch test-01 tasks through the Linear-creating path.
+
+- **Enablement dependency:** a factory operator adds a no-Linear dispatch mode. Owner: unassigned. Date: none. Readiness evidence: factory dispatch status shows a no-Linear option for this project.
+- **Blocked meanwhile:** dispatch of all M1 worker tasks T01-T15, so no product code, and every CP1 date after the reviewed design is on hold.
+- **Continues meanwhile:** design revision, independent review, and Captain approval of the detailed M1 plan (after the human `Approve CP1 v3` is recorded).
 
 ## 10. Next steps
 
