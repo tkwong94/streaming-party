@@ -5,11 +5,17 @@ import {
   parseClientMessage,
   type ClientMessage,
   type ClientMessageType,
+  type ControlMessage,
   type CreateMessage,
   type ErrorCode,
   type JoinMessage,
+  type PositionReportMessage,
   type ServerMessage,
+  type SetModeMessage,
+  type StateCause,
 } from '@test01/protocol';
+import { canControl, canSetMode } from './permissions.js';
+import { applyControl, applyHostReport, stateAt } from './playback.js';
 import type { Room, RoomRegistry } from './rooms.js';
 
 /** Close code after JOIN_DENIED, ROOM_FULL or UNSUPPORTED_VERSION. */
@@ -110,8 +116,14 @@ export class Connection {
         return this.onJoin(message);
       case 'leave':
         return this.onLeave();
+      case 'control':
+        return this.onControl(message);
+      case 'position_report':
+        return this.onPositionReport(message);
+      case 'set_mode':
+        return this.onSetMode(message);
       default:
-        // control, position_report, set_mode, chat and ping handlers are added by T04/T05.
+        // chat and ping handlers are added by T05.
         if (this.participantId === undefined) return this.sendError('NOT_JOINED', 'join a room first', message.type);
         return this.sendError('BAD_MESSAGE', 'message type not supported by this server', message.type);
     }
@@ -158,9 +170,54 @@ export class Connection {
       hostId: room.hostParticipantId,
       mode: room.mode,
       participants: registry.participantsWire(room),
-      state: registry.stateWire(room),
+      // Extrapolated with hostBuffering taken into account.
+      state: stateAt(room.state, Date.now()),
     });
     this.broadcastParticipants(room, participant.id);
+  }
+
+  private onControl(message: ControlMessage): void {
+    const room = this.joinedRoom('control');
+    if (!room) return;
+    const senderId = this.participantId!;
+    if (!canControl(room, senderId)) {
+      return this.sendError('FORBIDDEN_CONTROL', 'only the host can control playback in host-only mode', 'control');
+    }
+    Object.assign(room.state, applyControl(room.state, message.action, message.positionSec, senderId, Date.now()));
+    this.broadcastState(room, 'control');
+  }
+
+  /** Host reports rebase the room state; guest reports are ignored without a reply. */
+  private onPositionReport(message: PositionReportMessage): void {
+    const room = this.joinedRoom('position_report');
+    if (!room || room.hostParticipantId !== this.participantId) return;
+    Object.assign(room.state, applyHostReport(room.state, message, Date.now()));
+    this.broadcastState(room, 'host_report');
+  }
+
+  private onSetMode(message: SetModeMessage): void {
+    const room = this.joinedRoom('set_mode');
+    if (!room) return;
+    const senderId = this.participantId!;
+    if (!canSetMode(room, senderId)) return this.sendError('FORBIDDEN_MODE', 'only the host can change the control mode', 'set_mode');
+    room.mode = message.mode;
+    this.broadcast(room, { v: PROTOCOL_VERSION, type: 'mode', mode: room.mode, changedBy: senderId });
+  }
+
+  /** Room of the bound participant, or undefined after answering NOT_JOINED. */
+  private joinedRoom(inReplyTo: ClientMessageType): Room | undefined {
+    const participant = this.participantId === undefined ? undefined : this.ctx.registry.participant(this.participantId);
+    const room = participant && this.ctx.registry.get(participant.roomId);
+    if (!room) this.sendError('NOT_JOINED', 'join a room first', inReplyTo);
+    return room;
+  }
+
+  private broadcastState(room: Room, cause: StateCause): void {
+    this.broadcast(room, { v: PROTOCOL_VERSION, type: 'state', cause, state: { ...room.state } });
+  }
+
+  private broadcast(room: Room, message: ServerMessage): void {
+    for (const id of room.participants.keys()) this.ctx.connections.get(id)?.send(message);
   }
 
   private onLeave(): void {
