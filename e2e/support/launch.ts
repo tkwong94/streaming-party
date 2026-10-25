@@ -65,7 +65,7 @@ export async function launchWithExtension(
 ): Promise<BrowserContext> {
   const resolved = resolveChromium();
   if (!resolved) {
-    throw new Error(`Playwright Chromium ${requiredChromiumRevision()} not found; run: npx playwright install chromium`);
+    throw new Error(`Playwright Chromium chromium-${requiredChromiumRevision()} not found; run: npm run env:check for the install command`);
   }
   const extPath = resolve(extensionDir);
   const userDataDir = join(PROFILES_DIR, opts.profileName ?? 'default');
