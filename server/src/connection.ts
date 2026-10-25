@@ -3,23 +3,29 @@ import {
   CLIENT_MESSAGE_TYPES,
   PROTOCOL_VERSION,
   parseClientMessage,
+  type ClientChatMessage,
   type ClientMessage,
   type ClientMessageType,
   type ControlMessage,
   type CreateMessage,
   type ErrorCode,
   type JoinMessage,
+  type PingMessage,
   type PositionReportMessage,
   type ServerMessage,
   type SetModeMessage,
   type StateCause,
 } from '@test01/protocol';
+import { buildChatMessage } from './chat.js';
 import { canControl, canSetMode } from './permissions.js';
 import { applyControl, applyHostReport, stateAt } from './playback.js';
+import { BadMessageWindow, ParticipantLimits } from './ratelimit.js';
 import type { Room, RoomRegistry } from './rooms.js';
 
 /** Close code after JOIN_DENIED, ROOM_FULL or UNSUPPORTED_VERSION. */
 export const CLOSE_POLICY = 4001;
+/** Close code after 10 BAD_MESSAGE replies within 10 s. */
+export const CLOSE_TOO_MANY_BAD_MESSAGES = 4008;
 
 export interface ServerContext {
   registry: RoomRegistry;
@@ -56,6 +62,9 @@ function peekType(raw: string): ClientMessageType | undefined {
 export class Connection {
   participantId: string | undefined;
   private alive = true;
+  // Per connection, and a connection is bound to at most one participant.
+  private readonly limits = new ParticipantLimits();
+  private readonly badMessages = new BadMessageWindow();
 
   constructor(
     private readonly ctx: ServerContext,
@@ -101,6 +110,7 @@ export class Connection {
     const message = result.value;
     // Counted for every accepted frame, before permission and rate-limit checks (read by e2e tests).
     this.ctx.counters.received[message.type]++;
+    if (!this.limits.allow(message.type)) return this.sendError('RATE_LIMITED', 'too many messages, slow down', message.type);
     try {
       this.dispatch(message);
     } catch {
@@ -122,11 +132,24 @@ export class Connection {
         return this.onPositionReport(message);
       case 'set_mode':
         return this.onSetMode(message);
-      default:
-        // chat and ping handlers are added by T05.
-        if (this.participantId === undefined) return this.sendError('NOT_JOINED', 'join a room first', message.type);
-        return this.sendError('BAD_MESSAGE', 'message type not supported by this server', message.type);
+      case 'chat':
+        return this.onChat(message);
+      case 'ping':
+        return this.onPing(message);
     }
+  }
+
+  /** Answered before join too: clients estimate the clock offset while connecting. */
+  private onPing(message: PingMessage): void {
+    this.send({ v: PROTOCOL_VERSION, type: 'pong', clientSentMs: message.clientSentMs, serverMs: Date.now() });
+  }
+
+  /** Relayed once to every participant including the sender; nothing is kept. */
+  private onChat(message: ClientChatMessage): void {
+    const room = this.joinedRoom('chat');
+    if (!room) return;
+    const sender = room.participants.get(this.participantId!)!;
+    this.broadcast(room, { v: PROTOCOL_VERSION, type: 'chat', message: buildChatMessage(sender, message.text, Date.now()) });
   }
 
   private onCreate(message: CreateMessage): void {
@@ -255,5 +278,8 @@ export class Connection {
 
   private sendError(code: ErrorCode, message: string, inReplyTo?: ClientMessageType): void {
     this.send({ v: PROTOCOL_VERSION, type: 'error', code, message, ...(inReplyTo ? { inReplyTo } : {}) });
+    if (code === 'BAD_MESSAGE' && this.badMessages.record() && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.close(CLOSE_TOO_MANY_BAD_MESSAGES, 'too many bad messages');
+    }
   }
 }
