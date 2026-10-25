@@ -92,7 +92,7 @@ function start(): void {
   const store = createPendingInviteStore();
   captureInvite(window, store);
   const session = new PartySession();
-  const controller = new PartyController(document, session, () => selectAdapter(window.location, document));
+  const controller = new PartyController(document, session, (loc, doc) => selectAdapter(loc, doc));
   void controller.start();
   const handle = createRequestHandler(window, session, store);
   chrome.runtime.onMessage.addListener((req: RuntimeRequest, _sender, sendResponse) => {

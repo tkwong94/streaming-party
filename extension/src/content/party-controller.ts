@@ -28,6 +28,8 @@ export interface PartyControllerDeps {
   createEngine(adapter: PlayerAdapter, transport: SyncTransport, serverClock: ServerClock, opts: SyncEngineOptions): EngineLike;
 }
 
+export type AdapterSelector = (loc: Location, doc: Document) => Promise<PlayerAdapter | null>;
+
 export const defaultPartyControllerDeps: PartyControllerDeps = {
   clock: { now: () => Date.now() },
   createClockSync: (transport, clock) => new ClockSync(transport, clock),
@@ -49,12 +51,16 @@ export class PartyController {
   private unsubs: (() => void)[] = [];
   private stopped = false;
 
+  private readonly deps: PartyControllerDeps;
+
   constructor(
     private readonly doc: Document,
     private readonly session: PartySession,
-    private readonly selectAdapter: () => Promise<PlayerAdapter | null>,
-    private readonly deps: PartyControllerDeps = defaultPartyControllerDeps,
-  ) {}
+    private readonly selectAdapter: AdapterSelector,
+    deps: Partial<PartyControllerDeps> = {},
+  ) {
+    this.deps = { ...defaultPartyControllerDeps, ...deps };
+  }
 
   async start(): Promise<void> {
     this.unsubs.push(
@@ -76,7 +82,8 @@ export class PartyController {
       this.session.on('error', ({ message }) => this.sidebar?.setStatus(message)),
       this.session.on('closed', () => this.exitParty()),
     );
-    const adapter = await this.selectAdapter();
+    const loc = this.doc.location;
+    const adapter = loc ? await this.selectAdapter(loc, this.doc) : null;
     if (this.stopped) {
       adapter?.dispose();
       return;
