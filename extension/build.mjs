@@ -25,9 +25,28 @@ await build({
   logLevel: 'warning',
 });
 
+// MAIN-world Netflix bridge: installs itself on the page's window/document.
+await build({
+  stdin: {
+    contents:
+      "import { installNetflixBridge } from './src/adapters/netflix-page-bridge.ts';\ninstallNetflixBridge(window, document);\n",
+    resolveDir: root,
+    sourcefile: 'netflix-page-bridge-entry.ts',
+    loader: 'ts',
+  },
+  outfile: join(outdir, 'netflix-page-bridge.js'),
+  bundle: true,
+  format: 'iife',
+  target: 'chrome120',
+  logLevel: 'warning',
+});
+
 const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
 if (testBuild) {
-  for (const script of manifest.content_scripts) script.matches.push(FIXTURE_MATCH);
+  // Only the isolated-world content script runs on the fixture page; the Netflix bridge stays Netflix-only.
+  for (const script of manifest.content_scripts) {
+    if (script.js.includes('content.js')) script.matches.push(FIXTURE_MATCH);
+  }
 }
 await writeFile(join(outdir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 await copyFile(join(root, 'src/popup/popup.html'), join(outdir, 'popup.html'));

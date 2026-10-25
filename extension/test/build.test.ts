@@ -12,7 +12,7 @@ interface Manifest {
   manifest_version: number;
   permissions: string[];
   action: { default_popup: string };
-  content_scripts: { matches: string[]; js: string[]; run_at: string }[];
+  content_scripts: { matches: string[]; js: string[]; run_at: string; world?: string }[];
 }
 
 function readManifest(dir: string): Manifest {
@@ -34,10 +34,16 @@ describe('extension build', () => {
       expect(manifest.manifest_version).toBe(3);
       expect(manifest.permissions).toEqual(['storage', 'tabs']);
       expect(manifest.action.default_popup).toBe('popup.html');
-      expect(manifest.content_scripts).toHaveLength(1);
+      expect(manifest.content_scripts).toHaveLength(2);
       expect(manifest.content_scripts[0]!.js).toEqual(['content.js']);
       expect(manifest.content_scripts[0]!.run_at).toBe('document_start');
-      for (const file of ['content.js', 'popup.js', 'popup.html']) {
+      expect(manifest.content_scripts[1]).toEqual({
+        matches: ['https://www.netflix.com/watch/*'],
+        js: ['netflix-page-bridge.js'],
+        run_at: 'document_start',
+        world: 'MAIN',
+      });
+      for (const file of ['content.js', 'popup.js', 'popup.html', 'netflix-page-bridge.js']) {
         expect(existsSync(join(EXT_ROOT, dir, file)), `${dir}/${file}`).toBe(true);
       }
     }

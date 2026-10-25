@@ -6,6 +6,7 @@ import { Html5VideoAdapter } from '../../src/adapters/html5-video.js';
 import { YouTubeAdapter } from '../../src/adapters/youtube.js';
 import { mediaHarness, runAdapterContract } from './adapter-contract.js';
 import { FakeMedia } from './fake-media.js';
+import { makeNetflixHarness } from './fake-netflix-player.js';
 
 runAdapterContract('fixture', async () => {
   const media = new FakeMedia();
@@ -19,6 +20,8 @@ runAdapterContract('youtube', async () => {
   const media = new FakeMedia();
   return mediaHarness(new YouTubeAdapter(media.asVideo(), player), media, 'youtube');
 });
+
+runAdapterContract('netflix', makeNetflixHarness);
 
 describe('Html5VideoAdapter', () => {
   test('html5_play_rejection_maps_to_adapter_error', async () => {

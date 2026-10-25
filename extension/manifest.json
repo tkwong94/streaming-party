@@ -13,6 +13,12 @@
       "matches": ["https://www.netflix.com/watch/*", "https://www.youtube.com/watch*"],
       "js": ["content.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.netflix.com/watch/*"],
+      "js": ["netflix-page-bridge.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ]
 }
