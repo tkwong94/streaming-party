@@ -88,13 +88,15 @@ CP1 v1 (M1 only, older wording) and CP1 v2 (M1 + M2) are withdrawn. CP1 v3 is th
 
 M2 bullet-screen defaults for CP2 (D12, reversible): one chat input feeds both the sidebar and the scrolling overlay; per-viewer on/off toggle; works in fullscreen; lanes avoid overlap; player controls stay clickable; 100-character limit; text-only rendering.
 
-## 9. Factory dispatch and Linear (D15, resolved: option b)
+## 9. Factory dispatch and Linear (D16, supersedes D15)
 
-The factory's task dispatch tool creates one Linear issue per worker task and currently has no no-Linear mode. Jackie Wong chose (b): keep Linear at zero. Captain will not dispatch test-01 tasks through the Linear-creating path.
+The factory's task dispatch tool creates one Linear issue per worker task. Jackie Wong first chose (b), no Linear (D15), then switched to (a): Linear tasks are OK under the existing ai factory M1 milestone (D16).
 
-- **Enablement dependency:** a factory operator adds a no-Linear dispatch mode. Owner: unassigned. Date: none. Readiness evidence: factory dispatch status shows a no-Linear option for this project.
-- **Blocked meanwhile:** dispatch of all M1 worker tasks T01-T15, so no product code, and every CP1 date after the reviewed design is on hold.
-- **Continues meanwhile:** design revision, independent review, and Captain approval of the detailed M1 plan (after the human `Approve CP1 v3` is recorded).
+- **What gets created:** one `[test-pd-01]` Linear issue per dispatched M1 task, plus a non-executable parent issue for each work package, in Linear project "ai factory" under the existing milestone "M1 Docker MVP capability verification" (`bd462271-82e2-46ea-8963-ea4c9f1ef6de`, the technical anchor from D2).
+- **What is not created:** no test-01 milestones in Linear (D1 stands). M1, M2 and M3 live only in this plan.
+- **Plan of record:** this file in GitHub `main`. The Linear issues only mirror the dispatched tasks.
+- **When:** only after the revised detailed M1 plan passes independent review and Captain approves it. CP1 v3 human approval is recorded (2026-10-25).
+- **Unblocked:** the no-Linear factory change is no longer needed for M1.
 
 ## 10. Next steps
 
