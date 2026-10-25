@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "test-01 Watch Together",
+  "version": "0.1.0",
+  "description": "Synced playback and chat for Netflix and YouTube watch parties.",
+  "permissions": ["storage", "tabs"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "test-01 Watch Together"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.netflix.com/watch/*", "https://www.youtube.com/watch*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
