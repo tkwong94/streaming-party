@@ -38,6 +38,13 @@ export const defaultPartyControllerDeps: PartyControllerDeps = {
 
 const NO_VIDEO_STATUS = 'No video found on this page; playback is not synced.';
 
+const JOIN_ERROR_STATUS: Record<string, string> = {
+  ROOM_FULL: 'Room full: this party already has the maximum number of participants.',
+  ROOM_NOT_FOUND: 'Party not found; it may have ended.',
+  JOIN_DENIED: 'Could not join: the invite link is not valid.',
+  CONNECT_FAILED: 'Could not reach the party server.',
+};
+
 /**
  * Wires one tab's party session to the player: clock sync and sync engine run
  * while in a party, and the sidebar shows participants, chat and control mode.
@@ -102,6 +109,12 @@ export class PartyController {
     this.sidebar?.destroy();
     this.sidebar = null;
     this.lastState = null;
+  }
+
+  /** Shows why a join attempt failed (e.g. ROOM_FULL) in the sidebar; no sync is started. */
+  reportJoinError(code: string): void {
+    if (this.stopped || this.session.inParty) return;
+    this.ensureSidebar().setStatus(JOIN_ERROR_STATUS[code] ?? `Could not join the party (${code}).`);
   }
 
   stop(): void {

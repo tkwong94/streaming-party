@@ -185,4 +185,14 @@ describe('PartyController', () => {
     expect(t.log.indexOf('engine.stop')).toBeLessThan(t.log.indexOf('clock.stop'));
     expect(document.querySelector('test01-sidebar')).toBeNull();
   });
+
+  it('controller_shows_room_full_status_on_join_error', async () => {
+    const t = setup();
+    await t.controller.start();
+
+    t.controller.reportJoinError('ROOM_FULL');
+
+    expect(shadow().querySelector('.status')!.textContent).toContain('Room full');
+    expect(t.createEngine).not.toHaveBeenCalled();
+  });
 });

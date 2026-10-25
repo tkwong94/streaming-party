@@ -100,6 +100,7 @@ function start(): void {
     void handle(req).then((res) => {
       // session.leave() detaches listeners without a 'closed' event, so tear down here.
       if (req.kind === 'test01/leave') controller.exitParty();
+      if (req.kind === 'test01/join' && 'ok' in res && !res.ok) controller.reportJoinError(res.error);
       sendResponse(res);
     });
     return true;
