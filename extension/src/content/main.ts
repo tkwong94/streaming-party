@@ -1,6 +1,8 @@
-// dist/content.js entry: invite capture and popup message handling. Extended by T12.
+// dist/content.js entry: invite capture, popup message handling and the party controller.
 import { buildInviteUrl, type Site } from '@test01/protocol';
+import { selectAdapter } from '../adapters/detect.js';
 import { captureInvite, createPendingInviteStore, type PendingInviteStore } from './invite-capture.js';
+import { PartyController } from './party-controller.js';
 import { PartySession, SessionError } from './session.js';
 
 export type RuntimeRequest =
@@ -89,10 +91,17 @@ export function createRequestHandler(win: Window, session: PartySession, store: 
 function start(): void {
   const store = createPendingInviteStore();
   captureInvite(window, store);
-  const handle = createRequestHandler(window, new PartySession(), store);
+  const session = new PartySession();
+  const controller = new PartyController(document, session, () => selectAdapter(window.location, document));
+  void controller.start();
+  const handle = createRequestHandler(window, session, store);
   chrome.runtime.onMessage.addListener((req: RuntimeRequest, _sender, sendResponse) => {
     if (typeof req?.kind !== 'string' || !req.kind.startsWith('test01/')) return false;
-    void handle(req).then(sendResponse);
+    void handle(req).then((res) => {
+      // session.leave() detaches listeners without a 'closed' event, so tear down here.
+      if (req.kind === 'test01/leave') controller.exitParty();
+      sendResponse(res);
+    });
     return true;
   });
 }
