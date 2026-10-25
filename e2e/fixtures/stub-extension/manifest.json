@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "test01 e2e stub extension",
+  "version": "1.0.0",
+  "description": "Stub used by the T02 smoke test to prove unpacked extensions load.",
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1:8790/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
