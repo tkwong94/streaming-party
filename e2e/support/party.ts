@@ -1,4 +1,4 @@
-// Party-flow helpers: the real sync server, the built test extension and popup driving.
+// Party-flow helpers: the in-process sync server, the built test extension and popup driving.
 import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
@@ -9,11 +9,15 @@ import WebSocket from 'ws';
 import { launchWithExtension } from './launch.js';
 
 export const EXTENSION_DIR = fileURLToPath(new URL('../../extension/dist-test/', import.meta.url));
-export const SERVER_PORT = 8787;
-export const SERVER_URL = `ws://127.0.0.1:${SERVER_PORT}/ws`;
 
-export function startPartyServer(): Promise<SyncServerHandle> {
-  return createSyncServer({ port: SERVER_PORT, host: '127.0.0.1' });
+/** In-process sync server on loopback with an OS-assigned port. */
+export function startServer(): Promise<SyncServerHandle> {
+  return createSyncServer({ port: 0, host: '127.0.0.1' });
+}
+
+/** Control messages the server has received so far (T03 counters). */
+export function controlCount(handle: SyncServerHandle): number {
+  return handle.counters.received.control;
 }
 
 /** Chromium derives an unpacked extension's ID from its absolute path: sha256, first 32 hex digits mapped to a-p. */
@@ -22,63 +26,84 @@ export function extensionIdFor(dir: string): string {
   return Array.from(hex, (c) => String.fromCharCode(97 + parseInt(c, 16))).join('');
 }
 
-export interface Participant {
-  context: BrowserContext;
-  page: Page;
-  close(): Promise<void>;
+/** A browser profile with the test extension loaded. */
+export function launchProfile(profileName: string): Promise<BrowserContext> {
+  return launchWithExtension(EXTENSION_DIR, { profileName });
 }
 
-/** One browser profile with the test extension, its watch tab already loaded. */
-export async function openParticipant(profileName: string, url: string): Promise<Participant> {
-  const context = await launchWithExtension(EXTENSION_DIR, { profileName });
-  const page = context.pages()[0] ?? (await context.newPage());
-  await page.goto(url);
-  await page.evaluate(() => (window as any).__fixture.ready);
-  return { context, page, close: () => context.close() };
+export interface OpenPartyOptions {
+  /** Watch page for the host, invite URL for a guest. */
+  url: string;
+  nickname: string;
+  /** Host only: server URL typed into the popup. */
+  serverUrl?: string;
+}
+
+export interface PartyInfo {
+  inviteUrl?: string;
+  /** Host only: ms from the popup Create click to the invite URL being shown. */
+  createMs?: number;
+  /** Popup status text after the click. */
+  popupStatus: string;
+}
+
+const partyInfo = new WeakMap<Page, PartyInfo>();
+
+export function partyInfoOf(page: Page): PartyInfo {
+  const info = partyInfo.get(page);
+  if (!info) throw new Error('page was not opened with openParty');
+  return info;
 }
 
 /**
  * Opens popup.html in a background tab of the same window. The watch tab stays active, so the
  * popup's chrome.tabs.query({ active: true, currentWindow: true }) resolves to the watch tab.
  */
-export async function openPopup(p: Participant): Promise<Page> {
-  const popup = await p.context.newPage();
-  await p.page.bringToFront();
+async function openPopup(context: BrowserContext, watch: Page): Promise<Page> {
+  const popup = await context.newPage();
+  await watch.bringToFront();
   await popup.goto(`chrome-extension://${extensionIdFor(EXTENSION_DIR)}/popup.html`);
   return popup;
 }
 
-export async function createParty(p: Participant, nickname: string): Promise<string> {
-  const popup = await openPopup(p);
-  await popup.fill('#server-url', SERVER_URL);
-  await popup.fill('#nickname', nickname);
-  await popup.click('#create');
-  await expect(popup.locator('#invite-url')).not.toHaveValue('', { timeout: 10_000 });
-  const inviteUrl = await popup.inputValue('#invite-url');
+/** Loads the watch page in `context` and creates (host) or joins (guest) a party through the popup. */
+export async function openParty(context: BrowserContext, role: 'host' | 'guest', opts: OpenPartyOptions): Promise<Page> {
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto(opts.url);
+  await page.evaluate(() => (window as any).__fixture.ready);
+  const popup = await openPopup(context, page);
+  const info: PartyInfo = { popupStatus: '' };
+  if (role === 'host') {
+    if (opts.serverUrl) await popup.fill('#server-url', opts.serverUrl);
+    await popup.fill('#nickname', opts.nickname);
+    const t0 = Date.now();
+    await popup.click('#create');
+    await expect(popup.locator('#invite-url')).not.toHaveValue('', { timeout: 10_000 });
+    info.createMs = Date.now() - t0;
+    info.inviteUrl = await popup.inputValue('#invite-url');
+  } else {
+    await expect(popup.locator('#join-section')).toBeVisible({ timeout: 10_000 });
+    await popup.fill('#nickname', opts.nickname);
+    await popup.click('#join');
+    await expect(popup.locator('#join')).toBeEnabled({ timeout: 10_000 });
+    info.inviteUrl = opts.url;
+  }
+  info.popupStatus = (await popup.locator('#status').textContent()) ?? '';
   await popup.close();
-  return inviteUrl;
+  partyInfo.set(page, info);
+  return page;
 }
 
-/** Clicks Join in the popup and returns the popup's status text afterwards. */
-export async function joinParty(p: Participant, nickname: string): Promise<string> {
-  const popup = await openPopup(p);
-  await expect(popup.locator('#join-section')).toBeVisible({ timeout: 10_000 });
-  await popup.fill('#nickname', nickname);
-  await popup.click('#join');
-  await expect(popup.locator('#join')).toBeEnabled({ timeout: 10_000 });
-  const status = (await popup.locator('#status').textContent()) ?? '';
-  await popup.close();
-  return status;
+export async function readPlayer(page: Page): Promise<{ positionSec: number; paused: boolean; sampledAtMs: number }> {
+  return page.evaluate(() => {
+    const v = (window as any).__fixture.video as HTMLVideoElement;
+    return { positionSec: v.currentTime, paused: v.paused, sampledAtMs: Date.now() };
+  });
 }
 
-export function sidebar(page: Page, selector: string): Locator {
-  return page.locator(`test01-sidebar ${selector}`);
-}
-
-export function video(page: Page) {
+/** User-like player actions on the fixture video (these fire real media events). */
+export function player(page: Page) {
   return {
-    paused: () => page.evaluate(() => ((window as any).__fixture.video as HTMLVideoElement).paused),
-    time: () => page.evaluate(() => ((window as any).__fixture.video as HTMLVideoElement).currentTime),
     play: () => page.evaluate(() => ((window as any).__fixture.video as HTMLVideoElement).play()),
     pause: () => page.evaluate(() => ((window as any).__fixture.video as HTMLVideoElement).pause()),
     seek: (sec: number) =>
@@ -92,6 +117,10 @@ export function video(page: Page) {
         sec,
       ),
   };
+}
+
+export function sidebar(page: Page, selector: string): Locator {
+  return page.locator(`test01-sidebar ${selector}`);
 }
 
 /** A protocol-level participant (no browser) used to fill a room. */
