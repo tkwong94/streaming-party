@@ -2,6 +2,8 @@
 import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
+import { connect as netConnect, createServer as createNetServer, type AddressInfo, type Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { PROTOCOL_VERSION, type InviteLink } from '@test01/protocol';
 import { createSyncServer, type SyncServerHandle } from '@test01/server';
@@ -26,9 +28,106 @@ export function extensionIdFor(dir: string): string {
   return Array.from(hex, (c) => String.fromCharCode(97 + parseInt(c, 16))).join('');
 }
 
-/** A browser profile with the test extension loaded. */
-export function launchProfile(profileName: string): Promise<BrowserContext> {
-  return launchWithExtension(EXTENSION_DIR, { profileName });
+/** A browser profile with the test extension (or `opts.extensionDir`) loaded. */
+export function launchProfile(
+  profileName: string,
+  opts: { extensionDir?: string; extraArgs?: string[] } = {},
+): Promise<BrowserContext> {
+  return launchWithExtension(opts.extensionDir ?? EXTENSION_DIR, { profileName, extraArgs: opts.extraArgs });
+}
+
+/** Chromium flag that puts the fixture origin in the public address space, as youtube.com is. */
+export function publicOriginArgs(fixtureUrl: string): string[] {
+  return [`--ip-address-space-overrides=127.0.0.1:${new URL(fixtureUrl).port}=public`];
+}
+
+/** A plain HTTP server that answers every path and never upgrades (a non-test01 server or tunnel error page). */
+export async function startPlainHttpServer(): Promise<{ port: number; close(): Promise<void> }> {
+  const server = createHttpServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' }).end('<p>not test01</p>');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  return {
+    port: (server.address() as AddressInfo).port,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  };
+}
+
+export interface CountingProxy {
+  port: number;
+  /** ws URL of the sync server reached through this proxy. */
+  wsUrl: string;
+  /** TCP connections that reached the proxy. */
+  readonly connections: number;
+  /** Connections that sent any bytes (an HTTP request reached the server). */
+  readonly requests: number;
+  /** Connections whose first request asked for a WebSocket upgrade. */
+  readonly upgrades: number;
+  /** Proxied connections that have closed (either side). */
+  readonly closes: number;
+  close(): Promise<void>;
+}
+
+/** TCP pass-through in front of the sync server, counting connections and socket closes. */
+export async function startCountingProxy(target: SyncServerHandle): Promise<CountingProxy> {
+  let connections = 0;
+  let closes = 0;
+  let requests = 0;
+  let upgrades = 0;
+  const sockets = new Set<Socket>();
+  const server = createNetServer((client) => {
+    connections++;
+    client.once('data', (chunk: Buffer) => {
+      requests++;
+      if (/^upgrade:\s*websocket/im.test(chunk.toString('latin1'))) upgrades++;
+    });
+    const upstream = netConnect(target.port, '127.0.0.1');
+    let closed = false;
+    const onClose = () => {
+      if (closed) return;
+      closed = true;
+      closes++;
+      client.destroy();
+      upstream.destroy();
+    };
+    for (const s of [client, upstream]) {
+      sockets.add(s);
+      s.on('error', () => {});
+      s.on('close', () => {
+        sockets.delete(s);
+        onClose();
+      });
+    }
+    client.pipe(upstream);
+    upstream.pipe(client);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const port = (server.address() as AddressInfo).port;
+  return {
+    port,
+    wsUrl: `ws://127.0.0.1:${port}/ws`,
+    get connections() {
+      return connections;
+    },
+    get closes() {
+      return closes;
+    },
+    get requests() {
+      return requests;
+    },
+    get upgrades() {
+      return upgrades;
+    },
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const s of sockets) s.destroy();
+        server.close(() => resolve());
+      }),
+  };
 }
 
 export interface OpenPartyOptions {
@@ -37,6 +136,8 @@ export interface OpenPartyOptions {
   nickname: string;
   /** Host only: server URL typed into the popup. */
   serverUrl?: string;
+  /** Extension loaded in the context; defaults to EXTENSION_DIR. */
+  extensionDir?: string;
 }
 
 export interface PartyInfo {
@@ -59,10 +160,10 @@ export function partyInfoOf(page: Page): PartyInfo {
  * Opens popup.html in a background tab of the same window. The watch tab stays active, so the
  * popup's chrome.tabs.query({ active: true, currentWindow: true }) resolves to the watch tab.
  */
-async function openPopup(context: BrowserContext, watch: Page): Promise<Page> {
+export async function openPopup(context: BrowserContext, watch: Page, extensionDir = EXTENSION_DIR): Promise<Page> {
   const popup = await context.newPage();
   await watch.bringToFront();
-  await popup.goto(`chrome-extension://${extensionIdFor(EXTENSION_DIR)}/popup.html`);
+  await popup.goto(`chrome-extension://${extensionIdFor(extensionDir)}/popup.html`);
   return popup;
 }
 
@@ -71,7 +172,7 @@ export async function openParty(context: BrowserContext, role: 'host' | 'guest',
   const page = context.pages()[0] ?? (await context.newPage());
   await page.goto(opts.url);
   await page.evaluate(() => (window as any).__fixture.ready);
-  const popup = await openPopup(context, page);
+  const popup = await openPopup(context, page, opts.extensionDir);
   const info: PartyInfo = { popupStatus: '' };
   if (role === 'host') {
     if (opts.serverUrl) await popup.fill('#server-url', opts.serverUrl);

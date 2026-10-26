@@ -59,9 +59,14 @@ export function resolveChromium(): { browsersPath: string; executablePath: strin
   return null;
 }
 
+/** Unpacked test build to load: TEST01_EXT_DIR (e.g. an older commit's dist-test) or this repo's extension/dist-test. */
+export function testExtensionDir(): string {
+  return process.env.TEST01_EXT_DIR || join(REPO_ROOT, 'extension/dist-test');
+}
+
 export async function launchWithExtension(
   extensionDir: string,
-  opts: { profileName?: string } = {},
+  opts: { profileName?: string; extraArgs?: string[] } = {},
 ): Promise<BrowserContext> {
   const resolved = resolveChromium();
   if (!resolved) {
@@ -78,6 +83,7 @@ export async function launchWithExtension(
       `--disable-extensions-except=${extPath}`,
       `--load-extension=${extPath}`,
       '--autoplay-policy=no-user-gesture-required',
+      ...(opts.extraArgs ?? []),
     ],
   });
 }
