@@ -1,17 +1,7 @@
 import type { ActionResponse, RuntimeRequest, StatusResponse } from '../content/main.js';
+import { errorText } from './error-text.js';
 
 const DEFAULT_SERVER_URL = 'ws://127.0.0.1:8787/ws';
-
-const ERROR_TEXT: Record<string, string> = {
-  UNSUPPORTED_PAGE: 'This page is not a supported watch page.',
-  NO_PENDING_INVITE: 'No invite found on this page.',
-  CONNECT_FAILED: 'Could not connect to the server.',
-  JOIN_DENIED: 'The invite is invalid or the party has ended.',
-  ROOM_FULL: 'The party is full (10 people).',
-  BAD_MESSAGE: 'The server rejected the request. Check your nickname.',
-  ALREADY_JOINED: 'Already in a party.',
-  RATE_LIMITED: 'Too many requests. Try again shortly.',
-};
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -35,6 +25,8 @@ const ui = {
 };
 
 let tabId: number | null = null;
+// Server address of the captured invite from the last status; named in join errors.
+let pendingServerUrl: string | undefined;
 
 function show(node: HTMLElement, visible: boolean): void {
   node.classList.toggle('hidden', !visible);
@@ -44,8 +36,8 @@ function setStatus(text: string): void {
   ui.status.textContent = text;
 }
 
-function showError(code: string): void {
-  setStatus(ERROR_TEXT[code] ?? `Error: ${code}`);
+function showError(code: string, serverUrl?: string): void {
+  setStatus(errorText(code, serverUrl));
 }
 
 async function send<T>(req: RuntimeRequest): Promise<T | null> {
@@ -66,6 +58,7 @@ function render(status: StatusResponse | null): void {
   show(ui.partySection, inParty);
   ui.inviteUrl.value = status?.inviteUrl ?? '';
   const pending = supported && !inParty ? status?.pendingInvite ?? null : null;
+  pendingServerUrl = pending?.serverUrl;
   show(ui.joinSection, pending !== null);
   ui.joinServer.textContent = pending?.serverUrl ?? '';
   ui.joinRoom.textContent = pending?.roomId ?? '';
@@ -102,7 +95,7 @@ ui.create.addEventListener('click', () =>
     await chrome.storage.local.set({ serverUrl, nickname });
     const res = await send<ActionResponse>({ kind: 'test01/create', serverUrl, nickname });
     if (!res) return showError('UNSUPPORTED_PAGE');
-    if (!res.ok) return showError(res.error);
+    if (!res.ok) return showError(res.error, serverUrl);
     await chrome.storage.session.set({ [`invite:${tabId}`]: res.inviteUrl });
     await refresh();
   }),
@@ -113,9 +106,10 @@ ui.join.addEventListener('click', () =>
     const nickname = readNickname();
     if (!nickname) return;
     await chrome.storage.local.set({ nickname });
+    const serverUrl = pendingServerUrl;
     const res = await send<ActionResponse>({ kind: 'test01/join', nickname });
     if (!res) return showError('UNSUPPORTED_PAGE');
-    if (!res.ok) return showError(res.error);
+    if (!res.ok) return showError(res.error, serverUrl);
     await refresh();
   }),
 );
