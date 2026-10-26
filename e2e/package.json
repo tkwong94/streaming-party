@@ -1,0 +1,15 @@
+{
+  "name": "@test01/e2e",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1",
+    "@test01/protocol": "*",
+    "@test01/server": "*",
+    "typescript": "^5.9.3"
+  }
+}

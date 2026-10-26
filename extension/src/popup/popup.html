@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>test-01 Watch Together</title>
+    <style>
+      body { font: 13px system-ui, sans-serif; width: 300px; margin: 12px; }
+      label { display: block; margin: 8px 0 2px; }
+      input { width: 100%; box-sizing: border-box; padding: 4px; }
+      button { margin-top: 8px; padding: 4px 10px; }
+      .hidden { display: none; }
+      #status { margin-top: 8px; color: #b00020; min-height: 1em; }
+      #join-section { border-top: 1px solid #ccc; margin-top: 10px; padding-top: 6px; }
+    </style>
+  </head>
+  <body>
+    <p id="unsupported" class="hidden">Open a Netflix or YouTube watch page to start a party.</p>
+
+    <section id="settings">
+      <label for="server-url">Server address</label>
+      <input id="server-url" type="text" spellcheck="false" />
+      <label for="nickname">Nickname</label>
+      <input id="nickname" type="text" maxlength="32" />
+    </section>
+
+    <section id="create-section">
+      <button id="create" type="button">Create party</button>
+    </section>
+
+    <section id="join-section" class="hidden">
+      <div>Invite found</div>
+      <div>Server: <span id="join-server"></span></div>
+      <div>Room: <span id="join-room"></span></div>
+      <button id="join" type="button">Join party</button>
+    </section>
+
+    <section id="party-section" class="hidden">
+      <label for="invite-url">Invite link</label>
+      <input id="invite-url" type="text" readonly />
+      <button id="copy" type="button">Copy</button>
+      <button id="leave" type="button">Leave party</button>
+    </section>
+
+    <div id="status" role="status"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>
