@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "description": "Synced playback and chat for Netflix and YouTube watch parties.",
   "permissions": ["storage", "tabs"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "test-01 Watch Together"

@@ -38,6 +38,8 @@ export const defaultPartyControllerDeps: PartyControllerDeps = {
 
 const NO_VIDEO_STATUS = 'No video found on this page; playback is not synced.';
 
+export const DISCONNECTED_STATUS = 'The party connection was lost. Create or join the party again to continue.';
+
 const JOIN_ERROR_STATUS: Record<string, string> = {
   ROOM_FULL: 'Room full: this party already has the maximum number of participants.',
   ROOM_NOT_FOUND: 'Party not found; it may have ended.',
@@ -87,7 +89,11 @@ export class PartyController {
       }),
       this.session.on('chat', (msg) => this.sidebar?.appendChat(msg)),
       this.session.on('error', ({ message }) => this.sidebar?.setStatus(message)),
-      this.session.on('closed', () => this.exitParty()),
+      this.session.on('closed', ({ initiatedLocally }) => {
+        this.exitParty();
+        // The connection dropped (server close or service worker terminated); no automatic reconnect.
+        if (!initiatedLocally && !this.stopped) this.ensureSidebar().setStatus(DISCONNECTED_STATUS);
+      }),
     );
     const loc = this.doc.location;
     const adapter = loc ? await this.selectAdapter(loc, this.doc) : null;

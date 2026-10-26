@@ -41,6 +41,22 @@ await build({
   logLevel: 'warning',
 });
 
+// Classic (non-module) service worker that owns the party WebSocket for every tab.
+await build({
+  stdin: {
+    contents:
+      "import { startTransportRelay } from './src/background/service-worker.ts';\nstartTransportRelay({ runtime: chrome.runtime });\n",
+    resolveDir: root,
+    sourcefile: 'background-entry.ts',
+    loader: 'ts',
+  },
+  outfile: join(outdir, 'background.js'),
+  bundle: true,
+  format: 'iife',
+  target: 'chrome120',
+  logLevel: 'warning',
+});
+
 const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
 if (testBuild) {
   // Only the isolated-world content script runs on the fixture page; the Netflix bridge stays Netflix-only.

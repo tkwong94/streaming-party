@@ -52,4 +52,31 @@ describe('extension build', () => {
     expect(dist.content_scripts[0]!.matches).not.toContain(FIXTURE_MATCH);
     expect(distTest.content_scripts[0]!.matches).toEqual([...SITE_MATCHES, FIXTURE_MATCH]);
   }, 30_000);
+
+  it('build_manifest_background', () => {
+    execFileSync(process.execPath, ['build.mjs'], { cwd: EXT_ROOT, stdio: 'pipe' });
+    execFileSync(process.execPath, ['build.mjs', '--test'], { cwd: EXT_ROOT, stdio: 'pipe' });
+
+    for (const dir of ['.', 'dist', 'dist-test']) {
+      const raw = JSON.parse(readFileSync(join(EXT_ROOT, dir, 'manifest.json'), 'utf8')) as Record<string, unknown>;
+      // Classic service worker: no "type" key.
+      expect(raw.background, `${dir}/manifest.json`).toStrictEqual({ service_worker: 'background.js' });
+      expect(raw.permissions).toEqual(['storage', 'tabs']);
+      expect(raw).not.toHaveProperty('host_permissions');
+      const scripts = raw.content_scripts as { matches: string[] }[];
+      const expected = dir === 'dist-test' ? [...SITE_MATCHES, FIXTURE_MATCH] : SITE_MATCHES;
+      expect(scripts[0]!.matches).toEqual(expected);
+      expect(scripts[1]!.matches).toEqual(['https://www.netflix.com/watch/*']);
+    }
+
+    for (const dir of ['dist', 'dist-test']) {
+      const background = join(EXT_ROOT, dir, 'background.js');
+      expect(existsSync(background), `${dir}/background.js`).toBe(true);
+      const code = readFileSync(background, 'utf8');
+      expect(code).not.toMatch(/^\s*(import|export)\b/m);
+      expect(code).toContain('new WebSocket');
+      // The socket lives only in the service worker.
+      expect(readFileSync(join(EXT_ROOT, dir, 'content.js'), 'utf8')).not.toContain('new WebSocket');
+    }
+  }, 30_000);
 });

@@ -98,7 +98,7 @@ function start(): void {
   chrome.runtime.onMessage.addListener((req: RuntimeRequest, _sender, sendResponse) => {
     if (typeof req?.kind !== 'string' || !req.kind.startsWith('test01/')) return false;
     void handle(req).then((res) => {
-      // session.leave() detaches listeners without a 'closed' event, so tear down here.
+      // session.leave() already emitted 'closed' {initiatedLocally:true}; this exitParty() is an idempotent no-op.
       if (req.kind === 'test01/leave') controller.exitParty();
       if (req.kind === 'test01/join' && 'ok' in res && !res.ok) controller.reportJoinError(res.error);
       sendResponse(res);

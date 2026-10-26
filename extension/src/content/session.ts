@@ -15,7 +15,8 @@ import {
   type Site,
   type StateCause,
 } from '@test01/protocol';
-import { createWsTransport, type WsTransport } from '../transport/ws-transport.js';
+import { createPortTransport } from '../transport/port-transport.js';
+import type { WsTransport } from '../transport/ws-transport.js';
 
 export const REPLY_TIMEOUT_MS = 5000;
 
@@ -37,7 +38,8 @@ export interface SessionEventMap {
   mode: { mode: ControlMode; changedBy: string };
   chat: ChatMessageWire;
   error: { code: ErrorCode; message: string; inReplyTo?: ClientMessageType };
-  closed: { code: number };
+  /** initiatedLocally is true only for this tab's own leave(). */
+  closed: { code: number; initiatedLocally: boolean };
 }
 
 export type SessionEvent = keyof SessionEventMap;
@@ -67,7 +69,7 @@ export class PartySession {
   private detach: (() => void)[] = [];
   private busy = false;
 
-  constructor(private readonly connect: Connect = createWsTransport) {}
+  constructor(private readonly connect: Connect = (serverUrl) => createPortTransport(serverUrl)) {}
 
   get inParty(): boolean {
     return this.transport !== null && this.selfId !== null;
@@ -107,6 +109,7 @@ export class PartySession {
     transport.send({ v: PROTOCOL_VERSION, type: 'leave' });
     this.reset();
     transport.close();
+    this.emit('closed', { code: 1000, initiatedLocally: true });
   }
 
   on<E extends SessionEvent>(event: E, cb: (payload: SessionEventMap[E]) => void): () => void {
@@ -202,7 +205,7 @@ export class PartySession {
 
   private handleClose(code: number): void {
     this.reset();
-    this.emit('closed', { code });
+    this.emit('closed', { code, initiatedLocally: false });
   }
 
   private reset(): void {

@@ -193,7 +193,7 @@ describe('PartySession', () => {
       ['state', { cause: 'control', state: next }],
       ['mode', { mode: 'everyone', changedBy: HOST_ID }],
       ['error', { code: 'RATE_LIMITED', message: 'slow down', inReplyTo: 'chat' }],
-      ['closed', { code: 1006 }],
+      ['closed', { code: 1006, initiatedLocally: false }],
     ]);
     expect(session.mode).toBeNull();
     expect(session.inParty).toBe(false);
@@ -210,5 +210,32 @@ describe('PartySession', () => {
     expect(transport.closed).toBe(true);
     expect(session.inParty).toBe(false);
     expect(session.transport).toBeNull();
+  });
+
+  it('session_closed_reports_initiator', async () => {
+    const transport = new FakeTransport((msg) => (msg.type === 'join' ? [joinedMessage()] : []));
+    const session = new PartySession(async () => transport);
+    await session.join(INVITE, 'Bob');
+    const closed: { payload: unknown; inParty: boolean }[] = [];
+    session.on('closed', (payload) => closed.push({ payload, inParty: session.inParty }));
+
+    session.leave();
+
+    expect(transport.sent.at(-1)).toEqual({ v: 1, type: 'leave' });
+    expect(transport.closed).toBe(true);
+    expect(closed).toEqual([{ payload: { code: 1000, initiatedLocally: true }, inParty: false }]);
+
+    // The socket's own close after leave() adds nothing.
+    transport.emitClose(1006);
+    expect(closed).toHaveLength(1);
+
+    // leave() outside a party emits nothing.
+    session.leave();
+    const idle = new PartySession(async () => new FakeTransport());
+    const idleClosed: unknown[] = [];
+    idle.on('closed', (payload) => idleClosed.push(payload));
+    idle.leave();
+    expect(closed).toHaveLength(1);
+    expect(idleClosed).toEqual([]);
   });
 });
